@@ -1,0 +1,63 @@
+worker
+
+
+    1  apt-get update && apt-get upgrade -y
+    2  apt-get install -y vim
+    3  sudo apt update -y
+    4  sudo apt upgrade -y
+    5  sudo apt install curl -y
+    6  sudo apt install net-tools -y
+    7  sudo swapoff -a
+    8  (crontab -l 2>/dev/null; echo "@reboot /sbin/swapoff -a") | crontab - || true
+    9  sudo apt-get update -y
+   10  cat <<EOF | sudo tee /etc/modules-load.d/crio.conf
+overlay
+br_netfilter
+EOF
+
+   11  sudo modprobe overlay
+   12  sudo modprobe br_netfilter
+   13  cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+   14  sudo sysctl --system
+   15  export KUBERNETES_VERSION=1.28.1-00
+   16  export OS=xUbuntu_22.04
+   17  export VERSION=1.28
+   18  cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /
+EOF
+
+   19  cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /
+EOF
+
+   20  curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
+   21  curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
+   22  sudo apt-get update
+   23  sudo apt-get install cri-o cri-o-runc -y
+   24  sudo systemctl daemon-reload
+   25  sudo systemctl enable crio --now
+   26  echo "CRI runtime installed susccessfully"
+   27  # Install kubelet, kubectl and Kubeadm
+   28  sudo apt-get update -y
+   29  sudo apt-get install -y apt-transport-https ca-certificates curl
+   30  sudo apt-get update -y
+   31  sudo apt-get install -y apt-transport-https ca-certificates curl
+   32  sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://dl.k8s.io/apt/doc/apt-key.gpg
+   33  echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+   34  sudo apt-get update -y
+   35  sudo apt-get install -y kubelet="$KUBERNETES_VERSION" kubectl="$KUBERNETES_VERSION" kubeadm="$KUBERNETES_VERSION"
+   36  sudo apt-get update -y
+   37  apt-mark hold kubeadm kubelet kubectl
+
+
+
+________________
+
+remove if any such file and run below command after that - rm /etc/kubernetes/pki/ca.crt
+
+#use these two in worker node to connect cluster ,run in worker node here 192.168.1.4 is ip of k8scp    eg - kubeadm join --token 27eee4.6e66ff60318da929 192.168.1.4:6443 --discovery-token-ca-cert-hash sha256:6d541678b05652e1fa5d43908e75e67376e994c3483d6683f2a18673e5d2a1b0
