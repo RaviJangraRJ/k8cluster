@@ -1,0 +1,197 @@
+extraaa will be sorted later
+
+apt upgrade
+apt install
+ifconfig
+apt install
+ifconfig
+update
+ifconfig
+net-tools
+vi /etc/ssh/sshd_config
+systemctl ssh reload
+systemctl reload ssh
+ifconfig
+systemctl status ssh
+ufw status
+systemctl reload sshd
+systemctl status ssh
+apt install openssh-server
+systemctl ufw status
+ufw status
+systemctl status ssh
+history
+
+
+
+[preflight] You can also perform this action in beforehand using 'kubeadm config images pull'
+W1110 18:13:26.489538    8304 checks.go:835] detected that the sandbox image "registry.k8s.io/pause:3.8" of the container runtime is inconsistent with that used by kubeadm. It is recommended that using "registry.k8s.io/pause:3.9" as the CRI sandbox image.
+
+
+
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address=192.168.1.16
+
+
+
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: 1.24.1
+controlPlaneEndpoint: "k8scp:6443"
+networking:
+ podSubnet: 192.170.0.0/16
+
+
+
+
+SHA2-256(stdin)= 8cf0ce6b6fdf2f6624a509030f804d94839044cd51109aadecefe68effdf09c1
+
+kubeadm join \
+--token s9qksb.me1gzf0penzq2805 \
+192.168.1.4:6443 \
+--discovery-token-ca-cert-hash \
+sha2-256:8cf0ce6b6fdf2f6624a509030f804d94839044cd51109aadecefe68effdf09c1
+
+
+_______________________check and sort
+
+
+#!/bin/bash
+#
+# Common setup for all servers (Control Plane and Nodes)
+
+set -euxo pipefail
+
+# Variable Declaration
+
+KUBERNETES_VERSION="1.28.1-00"
+
+# disable swap
+sudo swapoff -a
+
+# keeps the swaf off during reboot
+(crontab -l 2>/dev/null; echo "@reboot /sbin/swapoff -a") | crontab - || true
+sudo apt-get update -y
+
+apt install curl -y
+
+# Install CRI-O Runtime
+
+export VERSION=1.28
+export OS=xUbuntu_22.04
+
+# Create the .conf file to load the modules at bootup
+cat <<EOF | sudo tee /etc/modules-load.d/crio.conf
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# Set up required sysctl params, these persist across reboots.
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+sudo sysctl --system
+
+cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /
+EOF
+cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /
+EOF
+
+curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
+
+sudo apt-get update
+sudo apt-get install cri-o cri-o-runc -y
+
+sudo systemctl daemon-reload
+sudo systemctl enable crio --now
+
+echo "CRI runtime installed susccessfully"
+
+# Install kubelet, kubectl and Kubeadm
+
+sudo apt-get update -y
+sudo apt-get install -y apt-transport-https ca-certificates curl
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://dl.k8s.io/apt/doc/apt-key.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt-get update -y
+sudo apt-get install -y kubelet="$KUBERNETES_VERSION" kubectl="$KUBERNETES_VERSION" kubeadm="$KUBERNETES_VERSION"
+sudo apt-get update -y
+sudo apt-get install -y jq
+
+local_ip="$(ip --json addr show eth0 | jq -r '.[0].addr_info[] | select(.family == "inet") | .local')"
+cat > /etc/default/kubelet << EOF
+KUBELET_EXTRA_ARGS=--node-ip=$local_ip
+EOF
+
+
+
+local_ip="$(ifconfig| jq -r '.[0].addr_info[] | select(.family == "inet") | .local')"
+cat > /etc/default/kubelet << EOF
+KUBELET_EXTRA_ARGS=--node-ip=$local_ip
+EOF
+
+
+_______________________________
+
+
+
+
+
+
+
+
+#!/bin/bash
+#
+# Setup for Control Plane (Master) servers
+
+set -euxo pipefail
+
+# If you need public access to API server using the servers Public IP adress, change PUBLIC_IP_ACCESS to true.
+
+PUBLIC_IP_ACCESS="true"
+NODENAME=$(hostname -s)
+POD_CIDR="192.168.0.0/16"
+
+# Pull required images
+
+sudo kubeadm config images pull
+
+# Initialize kubeadm based on PUBLIC_IP_ACCESS
+
+if [[ "$PUBLIC_IP_ACCESS" == "false" ]]; then
+    
+    MASTER_PRIVATE_IP=$(ip addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+    sudo kubeadm init --apiserver-advertise-address="$MASTER_PRIVATE_IP" --apiserver-cert-extra-sans="$MASTER_PRIVATE_IP" --pod-network-cidr="$POD_CIDR" --node-name "$NODENAME" --ignore-preflight-errors Swap
+
+elif [[ "$PUBLIC_IP_ACCESS" == "true" ]]; then
+
+    MASTER_PUBLIC_IP=$(curl ifconfig.me && echo "")
+    sudo kubeadm init --control-plane-endpoint="$MASTER_PUBLIC_IP" --apiserver-cert-extra-sans="$MASTER_PUBLIC_IP" --pod-network-cidr="$POD_CIDR" --node-name "$NODENAME" --ignore-preflight-errors Swap
+
+else
+    echo "Error: MASTER_PUBLIC_IP has an invalid value: $PUBLIC_IP_ACCESS"
+    exit 1
+fi
+
+# Configure kubeconfig
+
+mkdir -p "$HOME"/.kube
+sudo cp -i /etc/kubernetes/admin.conf "$HOME"/.kube/config
+sudo chown "$(id -u)":"$(id -g)" "$HOME"/.kube/config
+
+# Install Claico Network Plugin Network 
+
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/tigera-operator.yaml
+
+curl https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/custom-resources.yaml -O
+
+kubectl create -f custom-resources.yaml
